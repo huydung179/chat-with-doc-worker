@@ -1,18 +1,127 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.toml`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
+import { Hono, Context, Env as HonoEnv } from "hono";
+import { Ai } from '@cloudflare/ai'
+import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
+import { CloudflareVectorizeStore } from "@langchain/cloudflare";
+import { createRetrievalChain } from "langchain/chains/retrieval"
+import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever"
+import { createStuffDocumentsChain } from "langchain/chains/combine_documents"
+import { qaPrompt } from "./prompts";
+import { contextualizeQPrompt } from "./prompts";
+import { CustomRetriever } from "./custom-retriever";
 
-export default {
-	async fetch(request, env, ctx): Promise<Response> {
-		return new Response('Hello World!');
-	},
-} satisfies ExportedHandler<Env>;
+type Note = {
+  id: number;
+  text: string;
+}
+
+type Env = {
+  AI: Ai;
+  DB: D1Database;
+  VECTOR_INDEX: VectorizeIndex;
+  OPENAI_API_KEY: string;
+}
+
+const app = new Hono<{ Bindings: Env }>();
+
+app.get('/', async (c) => {
+  const question = c.req.query('question')
+  if (!question) {
+    return c.text("Missing question", 400);
+  }
+
+  const embeddings = new OpenAIEmbeddings({
+    apiKey: c.env.OPENAI_API_KEY,
+  })
+  const vectorStore = await CloudflareVectorizeStore.fromExistingIndex(embeddings, {
+    index: c.env.VECTOR_INDEX,
+  })
+
+  const retriever = new CustomRetriever({
+    embeddings,
+    index: c.env.VECTOR_INDEX,
+    db: c.env.DB,
+    topK: 2,
+  })
+
+  const llm = new ChatOpenAI({
+    modelName: "gpt-4o-mini",
+    temperature: 0.9,
+    apiKey: c.env.OPENAI_API_KEY,
+  })
+
+  const historyAwareRetriever = await createHistoryAwareRetriever({
+    llm,
+    retriever,
+    rephrasePrompt: contextualizeQPrompt,
+  })
+
+  const questionAnswerChain = await createStuffDocumentsChain({
+    llm,
+    prompt: qaPrompt,
+  })
+
+  const ragChain = await createRetrievalChain({
+    retriever: historyAwareRetriever,
+    combineDocsChain: questionAnswerChain,
+  })
+
+  const results = await ragChain.invoke({
+    input: question,
+  })
+  return c.json(results)
+});
+
+// app.post("/notes", async (c: Context<Env>) => {
+//   const { text } = await c.req.json();
+//   if (!text) {
+//     return c.text("Missing text", 400);
+//   }
+
+//   const { results } = await (c.env as Env).DB.prepare(
+//     "INSERT INTO notes (text) VALUES (?) RETURNING *",
+//   )
+//     .bind(text)
+//     .run();
+
+//   const record = results.length ? results[0] : null;
+
+//   if (!record) {
+//     return c.text("Failed to create note", 500);
+//   }
+
+//   const { data } = await (c.env as Env).AI.run("@cf/baai/bge-base-en-v1.5", {
+//     text: [text],
+//   });
+//   const values = data[0];
+
+//   if (!values) {
+//     return c.text("Failed to generate vector embedding", 500);
+//   }
+
+//   const { id } = record as { id: number };
+//   const inserted = await (c.env as Env).VECTOR_INDEX.upsert([
+//     {
+//       id: id.toString(),
+//       values,
+//     },
+//   ]);
+
+//   return c.json({ id, text, inserted });
+// });
+
+// app.delete("/notes/:id", async (c) => {
+//   const { id } = c.req.param();
+
+//   const query = `DELETE FROM notes WHERE id = ?`;
+//   await (c.env as Env).DB.prepare(query).bind(id).run();
+
+//   await (c.env as Env).VECTOR_INDEX.deleteByIds([id]);
+
+//   return c.status(204);
+// });
+
+// app.onError((err, c) => {
+//   return c.text(err.message, 500);
+// });
+
+export default app;
