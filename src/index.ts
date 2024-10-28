@@ -8,7 +8,7 @@ import { qaPrompt } from "./prompts";
 import { contextualizeQPrompt } from "./prompts";
 import { CustomRetriever } from "./custom-retriever";
 import { cors } from "hono/cors";
-import { ChatHistory, historyToChatHistory } from "./utils";
+import { historyToChatHistory } from "./utils";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 
 type Note = {
