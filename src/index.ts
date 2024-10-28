@@ -42,7 +42,7 @@ app.post('/', async (c) => {
     return c.text("Missing question", 400);
   }
   const history = data.chatHistory || []
-  const chatHistory = historyToChatHistory(history)
+  const chatHistory = historyToChatHistory(history, 15)
 
 
   const embeddings = new OpenAIEmbeddings({
@@ -61,6 +61,7 @@ app.post('/', async (c) => {
     temperature: 0.7,
     apiKey: c.env.OPENAI_API_KEY,
     streaming: true,
+    maxTokens: 512,
   })
 
   const historyAwareRetriever = await createHistoryAwareRetriever({
