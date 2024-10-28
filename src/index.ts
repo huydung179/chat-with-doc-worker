@@ -37,6 +37,7 @@ app.use('*', cors({
 
 
 app.post('/', async (c) => {
+  const today = Date.now()
   const data = await c.req.json()
   if (!data.question) {
     return c.text("Missing question", 400);
@@ -74,7 +75,7 @@ app.post('/', async (c) => {
   finalOutputParser.name = "final-output-parser"
   const questionAnswerChain = await createStuffDocumentsChain({
     llm,
-    prompt: qaPrompt,
+    prompt: qaPrompt(today),
     outputParser: finalOutputParser,
   })
 

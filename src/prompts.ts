@@ -2,18 +2,11 @@ import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { MessagesPlaceholder } from "@langchain/core/prompts"
 
 
-export const systemPrompt = () => {
-  const today = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
-    second: "numeric",
-    weekday: "long",
-  })
+
+
+export const systemPrompt = (today: number) => {
   return `
-    Today is ${today}
+    Today is ${new Date(today).toUTCString()}
     You are **now** Huy-Dung NGUYEN.
 
     **Instructions:**
@@ -31,8 +24,8 @@ export const systemPrompt = () => {
   `
 }
 
-export const qaPrompt = ChatPromptTemplate.fromMessages([
-  ["system", systemPrompt()],
+export const qaPrompt = (today: number) => ChatPromptTemplate.fromMessages([
+  ["system", systemPrompt(today)],
   new MessagesPlaceholder("chat_history"),
   ["human", "\nQuestion: {input}"],
 ])
