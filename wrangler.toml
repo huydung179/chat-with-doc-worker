@@ -108,7 +108,7 @@ binding = "AI"
 
 # Bind a KV Namespace. Use KV as persistent storage for small key-value pairs.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#kv-namespaces
-[[kv_namespaces]]
-binding = "local_model_cache"
-id = "b58ecbd4402e4cab839f7b6eae294347"
-preview_id = "20e44a524dd44ecc9c2782ac4611e422"
+# [[kv_namespaces]]
+# binding = "local_model_cache"
+# id = "b58ecbd4402e4cab839f7b6eae294347"
+# preview_id = "20e44a524dd44ecc9c2782ac4611e422"

@@ -1,7 +1,6 @@
 import { Hono, Context, Env as HonoEnv } from "hono";
 import { Ai } from '@cloudflare/ai'
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
-import { CloudflareKVCache, CloudflareVectorizeStore } from "@langchain/cloudflare";
 import { createRetrievalChain } from "langchain/chains/retrieval"
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever"
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents"
@@ -41,12 +40,10 @@ app.get('/', async (c) => {
     topK: 2,
   })
 
-  const cachedModel = new CloudflareKVCache(c.env.local_model_cache)
   const llm = new ChatOpenAI({
     modelName: "gpt-4o-mini",
     temperature: 0.9,
     apiKey: c.env.OPENAI_API_KEY,
-    cache: cachedModel,
   })
 
   const historyAwareRetriever = await createHistoryAwareRetriever({
