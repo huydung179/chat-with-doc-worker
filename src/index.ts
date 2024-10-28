@@ -7,7 +7,7 @@ import { createStuffDocumentsChain } from "langchain/chains/combine_documents"
 import { qaPrompt } from "./prompts";
 import { contextualizeQPrompt } from "./prompts";
 import { CustomRetriever } from "./custom-retriever";
-import { stream } from "hono/streaming";
+import { cors } from "hono/cors";
 
 type Note = {
   id: number;
@@ -23,6 +23,16 @@ type Env = {
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+app.use('*', cors({
+  origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['POST', 'GET', 'OPTIONS'],
+  exposeHeaders: ['Content-Length'],
+  maxAge: 600,
+  credentials: true,
+}))
+
 
 app.get('/', async (c) => {
   const question = c.req.query('question')
@@ -65,7 +75,7 @@ app.get('/', async (c) => {
   })
 
 
-  const eventStream = await ragChain.streamEvents({
+  const eventStream = ragChain.streamEvents({
     input: question,
   }, {
     version: "v2",
