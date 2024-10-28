@@ -36,12 +36,12 @@ app.use('*', cors({
 }))
 
 
-app.get('/', async (c) => {
-  const data = c.req.query()
+app.post('/', async (c) => {
+  const data = await c.req.json()
   if (!data.question) {
     return c.text("Missing question", 400);
   }
-  const history = JSON.parse(data.chatHistory) as ChatHistory[] || []
+  const history = data.chatHistory || []
   const chatHistory = historyToChatHistory(history)
 
 
@@ -58,7 +58,7 @@ app.get('/', async (c) => {
 
   const llm = new ChatOpenAI({
     modelName: "gpt-4o-mini",
-    temperature: 0.9,
+    temperature: 0.7,
     apiKey: c.env.OPENAI_API_KEY,
     streaming: true,
   })

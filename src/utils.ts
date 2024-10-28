@@ -6,8 +6,8 @@ export type ChatHistory = {
   toolCallId?: string
 }
 
-export const historyToChatHistory = (history: ChatHistory[]) => {
-  return history.map((h) => {
+export const historyToChatHistory = (history: ChatHistory[], limit: number = 50) => {
+  return history.slice(Math.max(0, history.length - limit), history.length).map((h) => {
     if (h.role === "human") {
       return new HumanMessage(h.content)
     } else if (h.role === "ai") {
