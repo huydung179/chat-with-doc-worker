@@ -1,4 +1,4 @@
-import { Hono, Context, Env as HonoEnv } from "hono";
+import { Hono } from "hono";
 import { Ai } from '@cloudflare/ai'
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { createRetrievalChain } from "langchain/chains/retrieval"
@@ -7,6 +7,7 @@ import { createStuffDocumentsChain } from "langchain/chains/combine_documents"
 import { qaPrompt } from "./prompts";
 import { contextualizeQPrompt } from "./prompts";
 import { CustomRetriever } from "./custom-retriever";
+import { stream } from "hono/streaming";
 
 type Note = {
   id: number;
@@ -44,6 +45,7 @@ app.get('/', async (c) => {
     modelName: "gpt-4o-mini",
     temperature: 0.9,
     apiKey: c.env.OPENAI_API_KEY,
+    streaming: true,
   })
 
   const historyAwareRetriever = await createHistoryAwareRetriever({
@@ -62,14 +64,19 @@ app.get('/', async (c) => {
     combineDocsChain: questionAnswerChain,
   })
 
-  const startRagChainInvoke = performance.now()
-  const results = await ragChain.invoke({
-    input: question,
-  })
-  const endRagChainInvoke = performance.now()
-  console.log("ragChain.invoke", endRagChainInvoke - startRagChainInvoke)
 
-  return c.json(results)
+  const eventStream = await ragChain.streamEvents({
+    input: question,
+  }, {
+    version: "v2",
+    encoding: "text/event-stream",
+  })
+
+  return new Response(eventStream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+    },
+  });
 });
 
 // app.post("/notes", async (c: Context<Env>) => {
