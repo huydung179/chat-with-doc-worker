@@ -8,6 +8,8 @@ import { qaPrompt } from "./prompts";
 import { contextualizeQPrompt } from "./prompts";
 import { CustomRetriever } from "./custom-retriever";
 import { cors } from "hono/cors";
+import { ChatHistory, historyToChatHistory } from "./utils";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 
 type Note = {
   id: number;
@@ -35,10 +37,13 @@ app.use('*', cors({
 
 
 app.get('/', async (c) => {
-  const question = c.req.query('question')
-  if (!question) {
+  const data = c.req.query()
+  if (!data.question) {
     return c.text("Missing question", 400);
   }
+  const history = JSON.parse(data.chatHistory) as ChatHistory[] || []
+  const chatHistory = historyToChatHistory(history)
+
 
   const embeddings = new OpenAIEmbeddings({
     apiKey: c.env.OPENAI_API_KEY,
@@ -64,9 +69,12 @@ app.get('/', async (c) => {
     rephrasePrompt: contextualizeQPrompt,
   })
 
+  const finalOutputParser = new StringOutputParser()
+  finalOutputParser.name = "final-output-parser"
   const questionAnswerChain = await createStuffDocumentsChain({
     llm,
     prompt: qaPrompt,
+    outputParser: finalOutputParser,
   })
 
   const ragChain = await createRetrievalChain({
@@ -76,7 +84,8 @@ app.get('/', async (c) => {
 
 
   const eventStream = ragChain.streamEvents({
-    input: question,
+    input: data.question,
+    chat_history: chatHistory,
   }, {
     version: "v2",
     encoding: "text/event-stream",
