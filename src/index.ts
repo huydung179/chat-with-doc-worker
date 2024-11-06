@@ -105,16 +105,20 @@ app.post('/', async (c) => {
   });
 });
 
-app.post("/vectors/upsert", async (c) => {
+app.post("/vector/upsert", async (c) => {
   const { text, values, metadata } = await c.req.json();
   if (!text || !values || !metadata) {
     return c.text("Missing text, values, or metadata", 400);
   }
+  const { instanceName, createdBy } = metadata
+  if (!instanceName || !createdBy) {
+    return c.text("Missing instanceName or createdBy", 400);
+  }
 
   const { results } = await c.env.DB.prepare(
-    "INSERT INTO ChatbotTextData (text) VALUES (?) RETURNING *",
+    "INSERT INTO ChatbotTextData (text, created_by, instance_name) VALUES (?, ?, ?) RETURNING *",
   )
-    .bind(text)
+    .bind(text, createdBy, instanceName)
     .run();
 
   const record = results.length ? results[0] : null;
