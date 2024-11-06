@@ -11,17 +11,18 @@ import { cors } from "hono/cors";
 import { historyToChatHistory } from "./utils";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 
-type Note = {
-  id: number;
-  text: string;
-}
-
 type Env = {
   AI: Ai;
   DB: D1Database;
   VECTOR_INDEX: VectorizeIndex;
+  D1_TABLE_NAME: string;
   OPENAI_API_KEY: string;
-  local_model_cache: KVNamespace;
+  OPENAI_MODEL_NAME: string;
+  OPENAI_MODEL_TEMPERATURE: string;
+  OPENAI_MODEL_MAX_TOKEN: string;
+  MODEL_TOPK: string;
+  HISTORY_MODEL_LIMIT: string;
+  FINAL_OUTPUT_PARSER_NAME: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -43,7 +44,7 @@ app.post('/', async (c) => {
     return c.text("Missing question", 400);
   }
   const history = data.chatHistory || []
-  const chatHistory = historyToChatHistory(history, 15)
+  const chatHistory = historyToChatHistory(history, parseInt(c.env.HISTORY_MODEL_LIMIT))
 
 
   const embeddings = new OpenAIEmbeddings({
@@ -54,15 +55,16 @@ app.post('/', async (c) => {
     embeddings,
     index: c.env.VECTOR_INDEX,
     db: c.env.DB,
-    topK: 2,
+    topK: parseInt(c.env.MODEL_TOPK),
+    tableName: c.env.D1_TABLE_NAME,
   })
 
   const llm = new ChatOpenAI({
-    modelName: "gpt-4o-mini",
-    temperature: 0.7,
+    modelName: c.env.OPENAI_MODEL_NAME,
+    temperature: parseFloat(c.env.OPENAI_MODEL_TEMPERATURE),
     apiKey: c.env.OPENAI_API_KEY,
     streaming: true,
-    maxTokens: 512,
+    maxTokens: parseInt(c.env.OPENAI_MODEL_MAX_TOKEN),
   })
 
   const historyAwareRetriever = await createHistoryAwareRetriever({
@@ -72,7 +74,7 @@ app.post('/', async (c) => {
   })
 
   const finalOutputParser = new StringOutputParser()
-  finalOutputParser.name = "final-output-parser"
+  finalOutputParser.name = c.env.FINAL_OUTPUT_PARSER_NAME
   const questionAnswerChain = await createStuffDocumentsChain({
     llm,
     prompt: qaPrompt(today),
@@ -100,57 +102,49 @@ app.post('/', async (c) => {
   });
 });
 
-// app.post("/notes", async (c: Context<Env>) => {
-//   const { text } = await c.req.json();
-//   if (!text) {
-//     return c.text("Missing text", 400);
-//   }
+app.post("/vectors/upsert", async (c) => {
+  const { text, values, metadata } = await c.req.json();
+  if (!text || !values || !metadata) {
+    return c.text("Missing text, values, or metadata", 400);
+  }
 
-//   const { results } = await (c.env as Env).DB.prepare(
-//     "INSERT INTO notes (text) VALUES (?) RETURNING *",
-//   )
-//     .bind(text)
-//     .run();
+  const { results } = await c.env.DB.prepare(
+    "INSERT INTO ChatbotTextData (text) VALUES (?) RETURNING *",
+  )
+    .bind(text)
+    .run();
 
-//   const record = results.length ? results[0] : null;
+  const record = results.length ? results[0] : null;
 
-//   if (!record) {
-//     return c.text("Failed to create note", 500);
-//   }
+  if (!record) {
+    return c.text("Failed to create chatbot text data", 500);
+  }
 
-//   const { data } = await (c.env as Env).AI.run("@cf/baai/bge-base-en-v1.5", {
-//     text: [text],
-//   });
-//   const values = data[0];
+  const recordId = record.id as string
+  const inserted = await c.env.VECTOR_INDEX.upsert([
+    {
+      id: recordId,
+      values: values as VectorFloatArray,
+      metadata: metadata as Record<string, any>,
+    },
+  ]);
 
-//   if (!values) {
-//     return c.text("Failed to generate vector embedding", 500);
-//   }
+  return c.json({ id: recordId, inserted });
+});
 
-//   const { id } = record as { id: number };
-//   const inserted = await (c.env as Env).VECTOR_INDEX.upsert([
-//     {
-//       id: id.toString(),
-//       values,
-//     },
-//   ]);
+app.delete("/notes/:id", async (c) => {
+  const { id } = c.req.param();
 
-//   return c.json({ id, text, inserted });
-// });
+  const query = `DELETE FROM notes WHERE id = ?`;
+  await c.env.DB.prepare(query).bind(id).run();
 
-// app.delete("/notes/:id", async (c) => {
-//   const { id } = c.req.param();
+  await c.env.VECTOR_INDEX.deleteByIds([id]);
 
-//   const query = `DELETE FROM notes WHERE id = ?`;
-//   await (c.env as Env).DB.prepare(query).bind(id).run();
+  return c.status(204);
+});
 
-//   await (c.env as Env).VECTOR_INDEX.deleteByIds([id]);
-
-//   return c.status(204);
-// });
-
-// app.onError((err, c) => {
-//   return c.text(err.message, 500);
-// });
+app.onError((err, c) => {
+  return c.text(err.message, 500);
+});
 
 export default app;

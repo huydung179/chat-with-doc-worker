@@ -92,14 +92,14 @@ enabled = true
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#vectorize-indexes
 [[vectorize]]
 binding = "VECTOR_INDEX"
-index_name = "demo-index-2"
+index_name = "me-chatbot-vec"
 
 # Bind a D1 database. D1 is Cloudflare’s native serverless SQL database.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases
 [[d1_databases]]
 binding = "DB"
 database_name = "me-chatbot-db"
-database_id = "e51c8d3b-7ecb-47e0-8a6f-17c1f5774be7"  
+database_id = "01894209-8ddb-4c82-88b3-9c55dae08f72"  
 
 # Bind the Workers AI model catalog. Run machine learning models, powered by serverless GPUs, on Cloudflare’s global network
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#workers-ai
