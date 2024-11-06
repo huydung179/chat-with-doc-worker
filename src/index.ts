@@ -41,7 +41,7 @@ app.use('*', cors({
 
 app.post('/', async (c) => {
   const today = Date.now()
-  const { question, history, indexName, filter } = await c.req.json()
+  const { question, history, filter } = await c.req.json()
   if (!question) {
     return c.text("Missing question", 400);
   }
