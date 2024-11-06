@@ -14,7 +14,6 @@ import { StringOutputParser } from "@langchain/core/output_parsers";
 type Env = {
   AI: Ai;
   DB: D1Database;
-  VECTOR_INDEX: VectorizeIndex;
   D1_TABLE_NAME: string;
   OPENAI_API_KEY: string;
   OPENAI_MODEL_NAME: string;
@@ -23,6 +22,8 @@ type Env = {
   MODEL_TOPK: string;
   HISTORY_MODEL_LIMIT: string;
   FINAL_OUTPUT_PARSER_NAME: string;
+  CLOUDFLARE_ACCOUNT_ID: string;
+  CLOUDFLARE_VECTORIZE_API_KEY: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -39,12 +40,12 @@ app.use('*', cors({
 
 app.post('/', async (c) => {
   const today = Date.now()
-  const data = await c.req.json()
-  if (!data.question) {
+  const { question, history, indexName, filter } = await c.req.json()
+  if (!question) {
     return c.text("Missing question", 400);
   }
-  const history = data.chatHistory || []
-  const chatHistory = historyToChatHistory(history, parseInt(c.env.HISTORY_MODEL_LIMIT))
+
+  const chatHistory = historyToChatHistory(history || [], parseInt(c.env.HISTORY_MODEL_LIMIT))
 
 
   const embeddings = new OpenAIEmbeddings({
@@ -52,10 +53,13 @@ app.post('/', async (c) => {
   })
 
   const retriever = new CustomRetriever({
+    accountId: c.env.CLOUDFLARE_ACCOUNT_ID,
+    vectorizeApiKey: c.env.CLOUDFLARE_VECTORIZE_API_KEY,
     embeddings,
-    index: c.env.VECTOR_INDEX,
+    indexName,
     db: c.env.DB,
     topK: parseInt(c.env.MODEL_TOPK),
+    filter,
     tableName: c.env.D1_TABLE_NAME,
   })
 
@@ -88,7 +92,7 @@ app.post('/', async (c) => {
 
 
   const eventStream = ragChain.streamEvents({
-    input: data.question,
+    input: question,
     chat_history: chatHistory,
   }, {
     version: "v2",
@@ -102,46 +106,46 @@ app.post('/', async (c) => {
   });
 });
 
-app.post("/vectors/upsert", async (c) => {
-  const { text, values, metadata } = await c.req.json();
-  if (!text || !values || !metadata) {
-    return c.text("Missing text, values, or metadata", 400);
-  }
+// app.post("/vectors/upsert", async (c) => {
+//   const { text, values, metadata } = await c.req.json();
+//   if (!text || !values || !metadata) {
+//     return c.text("Missing text, values, or metadata", 400);
+//   }
 
-  const { results } = await c.env.DB.prepare(
-    "INSERT INTO ChatbotTextData (text) VALUES (?) RETURNING *",
-  )
-    .bind(text)
-    .run();
+//   const { results } = await c.env.DB.prepare(
+//     "INSERT INTO ChatbotTextData (text) VALUES (?) RETURNING *",
+//   )
+//     .bind(text)
+//     .run();
 
-  const record = results.length ? results[0] : null;
+//   const record = results.length ? results[0] : null;
 
-  if (!record) {
-    return c.text("Failed to create chatbot text data", 500);
-  }
+//   if (!record) {
+//     return c.text("Failed to create chatbot text data", 500);
+//   }
 
-  const recordId = record.id as string
-  const inserted = await c.env.VECTOR_INDEX.upsert([
-    {
-      id: recordId,
-      values: values as VectorFloatArray,
-      metadata: metadata as Record<string, any>,
-    },
-  ]);
+//   const recordId = record.id as string
+//   const inserted = await c.env.VECTOR_INDEX.upsert([
+//     {
+//       id: recordId,
+//       values: values as VectorFloatArray,
+//       metadata: metadata as Record<string, any>,
+//     },
+//   ]);
 
-  return c.json({ id: recordId, inserted });
-});
+//   return c.json({ id: recordId, inserted });
+// });
 
-app.delete("/notes/:id", async (c) => {
-  const { id } = c.req.param();
+// app.delete("/notes/:id", async (c) => {
+//   const { id } = c.req.param();
 
-  const query = `DELETE FROM notes WHERE id = ?`;
-  await c.env.DB.prepare(query).bind(id).run();
+//   const query = `DELETE FROM notes WHERE id = ?`;
+//   await c.env.DB.prepare(query).bind(id).run();
 
-  await c.env.VECTOR_INDEX.deleteByIds([id]);
+//   await c.env.VECTOR_INDEX.deleteByIds([id]);
 
-  return c.status(204);
-});
+//   return c.status(204);
+// });
 
 app.onError((err, c) => {
   return c.text(err.message, 500);
