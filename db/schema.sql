@@ -6,5 +6,7 @@ CREATE TABLE ChatbotTextData (
                                   substr('89ab', abs(random() % 4) + 1, 1) || 
                                   substr(hex(randomblob(2)), 2) ||
                                   hex(randomblob(6)))),
-    text TEXT
+    text TEXT,
+    created_by TEXT,
+    instance_name TEXT
 );
