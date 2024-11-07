@@ -146,6 +146,14 @@ app.delete("/vector/:id", async (c) => {
   return c.json({ "message": "Deleted chatbot text data and vector data" }, 200);
 });
 
+app.get("/chatbot/:userId/list", async (c) => {
+  const { userId } = c.req.param();
+  const query = `SELECT instance_name FROM ${c.env.D1_TABLE_NAME} WHERE created_by = ?`;
+  const { results } = await c.env.DB.prepare(query).bind(userId).run();
+  const uniqueInstanceNames = [...new Set(results.map((result) => result.instance_name))];
+  return c.json({ instanceNames: uniqueInstanceNames }, 200);
+});
+
 app.onError((err, c) => {
   return c.text(err.message, 500);
 });
