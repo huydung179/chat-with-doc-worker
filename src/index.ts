@@ -23,8 +23,6 @@ type Env = {
   MODEL_TOPK: string;
   HISTORY_MODEL_LIMIT: string;
   FINAL_OUTPUT_PARSER_NAME: string;
-  CLOUDFLARE_ACCOUNT_ID: string;
-  CLOUDFLARE_VECTORIZE_API_KEY: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -116,7 +114,7 @@ app.post("/vector/upsert", async (c) => {
   }
 
   const { results } = await c.env.DB.prepare(
-    "INSERT INTO ChatbotTextData (text, created_by, instance_name) VALUES (?, ?, ?) RETURNING *",
+    `INSERT INTO ${c.env.D1_TABLE_NAME} (text, created_by, instance_name) VALUES (?, ?, ?) RETURNING *`,
   )
     .bind(text, createdBy, instanceName)
     .run();
@@ -139,15 +137,13 @@ app.post("/vector/upsert", async (c) => {
   return c.json({ id: recordId, inserted });
 });
 
-app.delete("/notes/:id", async (c) => {
+app.delete("/vector/:id", async (c) => {
   const { id } = c.req.param();
 
-  const query = `DELETE FROM notes WHERE id = ?`;
+  const query = `DELETE FROM ${c.env.D1_TABLE_NAME} WHERE id = ?`;
   await c.env.DB.prepare(query).bind(id).run();
-
   await c.env.VECTOR_INDEX.deleteByIds([id]);
-
-  return c.status(204);
+  return c.json({ "message": "Deleted chatbot text data and vector data" }, 200);
 });
 
 app.onError((err, c) => {
