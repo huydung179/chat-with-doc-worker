@@ -154,6 +154,18 @@ app.get("/chatbot/:userId/list", async (c) => {
   return c.json({ instanceNames: uniqueInstanceNames }, 200);
 });
 
+app.delete("/chatbot/:userId/:chatbotName", async (c) => {
+  const { userId, chatbotName } = c.req.param();
+  const selectQuery = `SELECT id FROM ${c.env.D1_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
+  const { results } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run();
+  const ids = results.map((result) => result.id) as string[]
+
+  const deleteQuery = `DELETE FROM ${c.env.D1_TABLE_NAME} WHERE id IN (${ids.map((id) => `?`).join(",")})`;
+  await c.env.DB.prepare(deleteQuery).bind(...ids).run();
+  await c.env.VECTOR_INDEX.deleteByIds(ids);
+  return c.json({ "message": "Deleted chatbot text data and vector data" }, 200);
+});
+
 app.onError((err, c) => {
   return c.text(err.message, 500);
 });
