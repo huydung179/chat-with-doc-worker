@@ -129,7 +129,10 @@ app.post("/vector", async (c) => {
       },
     ]);
     
-    return c.json({ "message": "The text and vector data is created with id: " + recordId }, 200);
+    return c.json({
+      "message": "The text and vector data is created successfully",
+      "id": recordId,
+    }, 200);
 
   } catch (e) {
     // handle unique constraint case in D1
