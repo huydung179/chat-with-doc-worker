@@ -8,5 +8,6 @@ CREATE TABLE ChatbotTextData (
                                   hex(randomblob(6)))),
     text TEXT,
     created_by TEXT,
-    instance_name TEXT
+    instance_name TEXT,
+    UNIQUE(text, created_by, instance_name)
 );

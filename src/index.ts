@@ -103,7 +103,7 @@ app.post('/', async (c) => {
   });
 });
 
-app.post("/vector/upsert", async (c) => {
+app.post("/vector", async (c) => {
   const { text, values, metadata } = await c.req.json();
   if (!text || !values || !metadata) {
     return c.text("Missing text, values, or metadata", 400);
@@ -113,28 +113,35 @@ app.post("/vector/upsert", async (c) => {
     return c.text("Missing instanceName or createdBy", 400);
   }
 
-  const { results } = await c.env.DB.prepare(
-    `INSERT INTO ${c.env.D1_TABLE_NAME} (text, created_by, instance_name) VALUES (?, ?, ?) RETURNING *`,
-  )
+  try {
+    const { results } = await c.env.DB.prepare(
+      `INSERT INTO ${c.env.D1_TABLE_NAME} (text, created_by, instance_name) VALUES (?, ?, ?) RETURNING *`,
+    )
     .bind(text, createdBy, instanceName)
-    .run();
+    .run<{ id: string }>();
+    
+    const recordId = results[0].id
+    const inserted = await c.env.VECTOR_INDEX.upsert([
+      {
+        id: recordId,
+        values: values as VectorFloatArray,
+        metadata: metadata as Record<string, any>,
+      },
+    ]);
+    
+    return c.json({ "message": "The text and vector data is created with id: " + recordId }, 200);
 
-  const record = results.length ? results[0] : null;
-
-  if (!record) {
-    return c.text("Failed to create chatbot text data", 500);
+  } catch (e) {
+    // handle unique constraint case in D1
+    if (
+      e instanceof Error &&
+      e.message.includes("UNIQUE constraint failed") &&
+      e.message.includes("SQLITE_CONSTRAINT")
+    ) {
+      return c.json({ "message": "The text and vector data already exists, no update is done"}, 200)
+    }
+    throw e
   }
-
-  const recordId = record.id as string
-  const inserted = await c.env.VECTOR_INDEX.upsert([
-    {
-      id: recordId,
-      values: values as VectorFloatArray,
-      metadata: metadata as Record<string, any>,
-    },
-  ]);
-
-  return c.json({ id: recordId, inserted });
 });
 
 app.delete("/vector/:id", async (c) => {
