@@ -1,4 +1,6 @@
 DROP TABLE IF EXISTS ChatbotTextData;
+DROP TABLE IF EXISTS ChatbotUpdateHistory;
+
 CREATE TABLE ChatbotTextData (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4)) ||
                                   hex(randomblob(2)) ||
@@ -11,3 +13,18 @@ CREATE TABLE ChatbotTextData (
     instance_name TEXT,
     UNIQUE(text, created_by, instance_name)
 );
+
+CREATE TABLE ChatbotUpdateHistory (
+    id TEXT,
+    knowledge_id TEXT,
+    description TEXT,
+    FOREIGN KEY (id) REFERENCES ChatbotTextData(id) ON DELETE CASCADE,
+    UNIQUE(id, knowledge_id)
+);
+
+CREATE TRIGGER DeleteIDFromChatbotTextData
+AFTER DELETE ON ChatbotUpdateHistory
+BEGIN
+    DELETE FROM ChatbotTextData
+    WHERE id NOT IN (SELECT DISTINCT id FROM ChatbotUpdateHistory);
+END;
