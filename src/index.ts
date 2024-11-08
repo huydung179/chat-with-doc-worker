@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Context, Hono, Next } from "hono";
 import { Ai } from '@cloudflare/ai'
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { createRetrievalChain } from "langchain/chains/retrieval"
@@ -36,6 +36,15 @@ app.use('*', cors({
   maxAge: 600,
   credentials: true,
 }))
+
+const authMiddleware = async (c: Context, next: Next) => {
+  const authHeader = c.req.header('Authorization');
+  if (authHeader === `Bearer ${c.env.SECRET_BEARER_TOKEN}`) {
+    await next();
+  } else {
+    return c.text('Unauthorized', 401);
+  }
+};
 
 
 app.post('/', async (c) => {
@@ -104,7 +113,7 @@ app.post('/', async (c) => {
   });
 });
 
-app.post("/vector", async (c) => {
+app.post("/vector", authMiddleware, async (c) => {
   const { text, values, metadata, updateId, description } = await c.req.json();
   if (!text || !values || !metadata || !updateId || !description) {
     return c.json({
@@ -178,7 +187,7 @@ app.post("/vector", async (c) => {
   }
 });
 
-app.delete("/vector/:id", async (c) => {
+app.delete("/vector/:id", authMiddleware, async (c) => {
   const { id } = c.req.param();
 
   const query = `DELETE FROM ${c.env.D1_DATA_TABLE_NAME} WHERE id = ?`;
@@ -190,7 +199,7 @@ app.delete("/vector/:id", async (c) => {
   }, 200);
 });
 
-app.get("/chatbot/:userId/list", async (c) => {
+app.get("/chatbot/:userId/list", authMiddleware, async (c) => {
   const { userId } = c.req.param();
   const query = `SELECT instance_name FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ?`;
   const { results } = await c.env.DB.prepare(query).bind(userId).run();
@@ -201,7 +210,7 @@ app.get("/chatbot/:userId/list", async (c) => {
   }, 200);
 });
 
-app.delete("/chatbot/:userId/:chatbotName", async (c) => {
+app.delete("/chatbot/:userId/:chatbotName", authMiddleware, async (c) => {
   const { userId, chatbotName } = c.req.param();
   const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
   const { results } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run();
@@ -216,7 +225,7 @@ app.delete("/chatbot/:userId/:chatbotName", async (c) => {
   }, 200);
 });
 
-app.delete("/chatbot/:userId/:chatbotName/:knowledgeId", async (c) => {
+app.delete("/chatbot/:userId/:chatbotName/:knowledgeId", authMiddleware, async (c) => {
   const { userId, chatbotName, knowledgeId } = c.req.param();
 
   // get all ids of the chatbot of the user
@@ -226,11 +235,18 @@ app.delete("/chatbot/:userId/:chatbotName/:knowledgeId", async (c) => {
 
   // delete the update history of the knowledge
   const deleteQuery = `DELETE FROM ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} WHERE id IN (${ids.map((id) => `?`).join(",")}) AND knowledge_id = ?`;
-  await c.env.DB.prepare(deleteQuery).bind(...ids, knowledgeId).run();
-  return c.json({
-    "message": "Deleted chatbot update history",
-    "ok": true,
-  }, 200);
+  try {
+    await c.env.DB.prepare(deleteQuery).bind(...ids, knowledgeId).run();
+    return c.json({
+      "message": "Deleted chatbot update history",
+      "ok": true,
+    }, 200);
+  } catch (e) {
+    return c.json({
+      "message": "The knowledgeId does not exist",
+      "ok": false,
+    }, 404)
+  }
 });
 
 app.onError((err, c) => {
