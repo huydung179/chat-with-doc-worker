@@ -121,7 +121,7 @@ app.post("/vector", async (c) => {
     .run<{ id: string }>();
     
     const recordId = results[0].id
-    const inserted = await c.env.VECTOR_INDEX.upsert([
+    await c.env.VECTOR_INDEX.upsert([
       {
         id: recordId,
         values: values as VectorFloatArray,
