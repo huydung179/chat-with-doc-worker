@@ -106,11 +106,17 @@ app.post('/', async (c) => {
 app.post("/vector", async (c) => {
   const { text, values, metadata } = await c.req.json();
   if (!text || !values || !metadata) {
-    return c.text("Missing text, values, or metadata", 400);
+    return c.json({
+      "message": "Missing text, values, or metadata",
+      "ok": false,
+    }, 400);
   }
   const { instanceName, createdBy } = metadata
   if (!instanceName || !createdBy) {
-    return c.text("Missing instanceName or createdBy", 400);
+    return c.json({
+      "message": "Missing instanceName or createdBy",
+      "ok": false,
+    }, 400);
   }
 
   try {
@@ -131,6 +137,7 @@ app.post("/vector", async (c) => {
     
     return c.json({
       "message": "The text and vector data is created successfully",
+      "ok": true,
       "id": recordId,
     }, 200);
 
@@ -141,7 +148,10 @@ app.post("/vector", async (c) => {
       e.message.includes("UNIQUE constraint failed") &&
       e.message.includes("SQLITE_CONSTRAINT")
     ) {
-      return c.json({ "message": "The text and vector data already exists, no update is done"}, 200)
+      return c.json({
+        "message": "The text and vector data already exists, no update is done",
+        "ok": true,
+      }, 200)
     }
     throw e
   }
@@ -153,7 +163,10 @@ app.delete("/vector/:id", async (c) => {
   const query = `DELETE FROM ${c.env.D1_TABLE_NAME} WHERE id = ?`;
   await c.env.DB.prepare(query).bind(id).run();
   await c.env.VECTOR_INDEX.deleteByIds([id]);
-  return c.json({ "message": "Deleted chatbot text data and vector data" }, 200);
+  return c.json({
+    "message": "Deleted chatbot text data and vector data",
+    "ok": true,
+  }, 200);
 });
 
 app.get("/chatbot/:userId/list", async (c) => {
@@ -161,7 +174,10 @@ app.get("/chatbot/:userId/list", async (c) => {
   const query = `SELECT instance_name FROM ${c.env.D1_TABLE_NAME} WHERE created_by = ?`;
   const { results } = await c.env.DB.prepare(query).bind(userId).run();
   const uniqueInstanceNames = [...new Set(results.map((result) => result.instance_name))];
-  return c.json({ instanceNames: uniqueInstanceNames }, 200);
+  return c.json({
+    "instanceNames": uniqueInstanceNames,
+    "ok": true,
+  }, 200);
 });
 
 app.delete("/chatbot/:userId/:chatbotName", async (c) => {
@@ -173,11 +189,17 @@ app.delete("/chatbot/:userId/:chatbotName", async (c) => {
   const deleteQuery = `DELETE FROM ${c.env.D1_TABLE_NAME} WHERE id IN (${ids.map((id) => `?`).join(",")})`;
   await c.env.DB.prepare(deleteQuery).bind(...ids).run();
   await c.env.VECTOR_INDEX.deleteByIds(ids);
-  return c.json({ "message": "Deleted chatbot text data and vector data" }, 200);
+  return c.json({
+    "message": "Deleted chatbot text data and vector data",
+    "ok": true,
+  }, 200);
 });
 
 app.onError((err, c) => {
-  return c.text(err.message, 500);
+  return c.json({
+    "message": err.message,
+    "ok": false,
+  }, 500);
 });
 
 export default app;
