@@ -111,7 +111,11 @@ app.put("/chatbot/:userId/:chatbotName/insert-knowledge", authMiddleware, async 
     {
         id: results[0].id,
         values: values as VectorFloatArray,
-        metadata: metadata as Record<string, any>,
+        metadata: {
+          ...metadata as Record<string, any>,
+          createdBy: userId,
+          instanceName: chatbotName,
+        },
       },
     ]);
     
