@@ -32,10 +32,10 @@ type Env = {
 const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', cors({
-  origin: '*',
-  allowHeaders: ['*'],
-  allowMethods: ['POST', 'GET', 'OPTIONS'],
-  exposeHeaders: ['Content-Length'],
+  origin: "*",
+  allowHeaders: ["*"],
+  allowMethods: ["*"],
+  exposeHeaders: ["Content-Length"],
   maxAge: 600,
   credentials: true,
 }))
