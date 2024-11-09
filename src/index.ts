@@ -189,8 +189,25 @@ app.post("/chatbot/:userId/:chatbotName/prompt", authMiddleware, async (c) => {
   const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
   const { results: promptId } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run<{ id: string }>();
 
-  const insertQuery = `INSERT INTO ${c.env.D1_PROMPT_TABLE_NAME} (id, prompt) VALUES (?, ?)`;
-  await c.env.DB.prepare(insertQuery).bind(promptId[0].id, prompt).run();
+  if (promptId.length === 0) {
+    return c.json({
+      ...HTTP_STATUS_RESPONSES.NOT_FOUND,
+      message: "The chatbot does not exist",
+    }, {
+      status: HTTP_STATUS_RESPONSES.NOT_FOUND.status,
+    });
+  }
+
+  const existingPromptQuery = `SELECT prompt FROM ${c.env.D1_PROMPT_TABLE_NAME} WHERE id = ?`;
+  const { results: existingPrompt } = await c.env.DB.prepare(existingPromptQuery).bind(promptId[0].id).run<{ prompt: string }>(); 
+
+  if (existingPrompt.length > 0) {
+    const updateQuery = `UPDATE ${c.env.D1_PROMPT_TABLE_NAME} SET prompt = ? WHERE id = ?`;
+    await c.env.DB.prepare(updateQuery).bind(prompt, promptId[0].id).run();
+  } else {
+    const insertQuery = `INSERT INTO ${c.env.D1_PROMPT_TABLE_NAME} (id, prompt) VALUES (?, ?)`;
+    await c.env.DB.prepare(insertQuery).bind(promptId[0].id, prompt).run();
+  }
 
   return c.json({
     ...HTTP_STATUS_RESPONSES.OK,
