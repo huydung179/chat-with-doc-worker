@@ -8,7 +8,7 @@ import { qaPrompt } from "./prompts";
 import { contextualizeQPrompt } from "./prompts";
 import { CustomRetriever } from "./custom-retriever";
 import { cors } from "hono/cors";
-import { historyToChatHistory } from "./utils";
+import { defaultPrompt, historyToChatHistory } from "./utils";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { HTTP_STATUS_RESPONSES } from "./error-constants";
 
@@ -146,8 +146,13 @@ app.delete("/vector/:id", authMiddleware, async (c) => {
 
 app.post("/chatbot/:userId/:chatbotName", authMiddleware, async (c) => {
   const { userId, chatbotName } = c.req.param();
-  const query = `INSERT INTO ${c.env.D1_DATA_TABLE_NAME} (created_by, instance_name) VALUES (?, ?)`;
-  await c.env.DB.prepare(query).bind(userId, chatbotName).run();
+  const query = `INSERT INTO ${c.env.D1_DATA_TABLE_NAME} (created_by, instance_name) VALUES (?, ?) RETURNING *`;
+  const { results } = await c.env.DB.prepare(query).bind(userId, chatbotName).run();
+  await c.env.DB.prepare(
+    `INSERT INTO ${c.env.D1_PROMPT_TABLE_NAME} (id, prompt) VALUES (?, ?)`,
+  )
+  .bind(results[0].id, defaultPrompt)
+  .run()
   return c.json({
     ...HTTP_STATUS_RESPONSES.OK,
     message: "Created chatbot",

@@ -26,3 +26,5 @@ export const historyToChatHistory = (history: ChatHistory[], limit: number = 10)
     throw new Error(`Unknown role: ${h.role}`)
   })
 }
+
+export const defaultPrompt = "You are a helpful assistant. Your name is MeChatbot. The author of this chatbot is Huy-Dung Nguyen."
