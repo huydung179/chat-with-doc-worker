@@ -24,6 +24,7 @@ type Env = {
   MODEL_TOPK: string;
   HISTORY_MODEL_LIMIT: string;
   FINAL_OUTPUT_PARSER_NAME: string;
+  SECRET_BEARER_TOKEN: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
