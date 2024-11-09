@@ -26,5 +26,5 @@ CREATE TRIGGER DeleteIDFromChatbotTextData
 AFTER DELETE ON ChatbotUpdateHistory
 BEGIN
     DELETE FROM ChatbotTextData
-    WHERE id NOT IN (SELECT DISTINCT id FROM ChatbotUpdateHistory);
+    WHERE id NOT IN (SELECT DISTINCT id FROM ChatbotUpdateHistory) AND text NOT NULL;
 END;

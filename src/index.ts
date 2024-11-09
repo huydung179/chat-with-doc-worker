@@ -10,6 +10,7 @@ import { CustomRetriever } from "./custom-retriever";
 import { cors } from "hono/cors";
 import { historyToChatHistory } from "./utils";
 import { StringOutputParser } from "@langchain/core/output_parsers";
+import { HTTP_STATUS_RESPONSES } from "./error-constants";
 
 type Env = {
   AI: Ai;
@@ -47,6 +48,179 @@ const authMiddleware = async (c: Context, next: Next) => {
   }
 };
 
+app.put("/chatbot/:userId/:chatbotName/insert-knowledge", authMiddleware, async (c) => {
+  const { userId, chatbotName } = c.req.param();
+  const { text, values, metadata, domainKnowledgeName, description } = await c.req.json();
+  if (!text || !values || !metadata || !domainKnowledgeName || !description) {
+    return c.json({
+      ...HTTP_STATUS_RESPONSES.BAD_REQUEST,
+      message: "Missing text, values, metadata, domainKnowledgeName, or description",
+    }, {
+      status: HTTP_STATUS_RESPONSES.BAD_REQUEST.status,
+    });
+  }
+
+  const { results: existingRecord } = await c.env.DB.prepare(
+    `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE text = ? AND created_by = ? AND instance_name = ?`,
+  )
+  .bind(text, userId, chatbotName)
+  .run<{ id: string }>()
+
+  if (existingRecord.length > 0) {
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} (id, domain_knowledge_name, description) VALUES (?, ?, ?)`,
+      )
+      .bind(existingRecord[0].id, domainKnowledgeName, description)
+      .run()
+      return c.json({
+        ...HTTP_STATUS_RESPONSES.OK,
+        message: "The knowledge is updated successfully",
+      }, {
+        status: HTTP_STATUS_RESPONSES.OK.status,
+      });
+    } catch (e) {
+      if (
+        e instanceof Error &&
+        e.message.includes("UNIQUE constraint failed") &&
+        e.message.includes("SQLITE_CONSTRAINT")
+      ) {
+        return c.json({
+          ...HTTP_STATUS_RESPONSES.CONFLICT,
+          message: "The knowledgeId already exists",
+        }, {
+          status: HTTP_STATUS_RESPONSES.CONFLICT.status,
+        });
+      }
+      throw e;
+    }
+  } else {
+    const { results } = await c.env.DB.prepare(
+      `INSERT INTO ${c.env.D1_DATA_TABLE_NAME} (text, created_by, instance_name) VALUES (?, ?, ?) RETURNING *`,
+    )
+    .bind(text, userId, chatbotName)
+    .run<{ id: string }>();
+
+    await c.env.DB.prepare(
+      `INSERT INTO ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} (id, domain_knowledge_name, description) VALUES (?, ?, ?)`,
+    )
+    .bind(results[0].id, domainKnowledgeName, description)
+    .run()
+    
+    await c.env.VECTOR_INDEX.upsert([
+    {
+        id: results[0].id,
+        values: values as VectorFloatArray,
+        metadata: metadata as Record<string, any>,
+      },
+    ]);
+    
+    return c.json({
+      ...HTTP_STATUS_RESPONSES.OK,
+      message: "The text and vector data is created successfully",
+      id: results[0].id,
+    }, {
+      status: HTTP_STATUS_RESPONSES.OK.status,
+    });
+  }
+});
+
+app.delete("/vector/:id", authMiddleware, async (c) => {
+  const { id } = c.req.param();
+
+  const query = `DELETE FROM ${c.env.D1_DATA_TABLE_NAME} WHERE id = ?`;
+  await c.env.DB.prepare(query).bind(id).run();
+  await c.env.VECTOR_INDEX.deleteByIds([id]);
+  return c.json({
+    ...HTTP_STATUS_RESPONSES.OK,
+    message: "Deleted chatbot text data and vector data",
+  }, {
+    status: HTTP_STATUS_RESPONSES.OK.status,
+  });
+});
+
+app.post("/chatbot/:userId/:chatbotName", authMiddleware, async (c) => {
+  const { userId, chatbotName } = c.req.param();
+  const query = `INSERT INTO ${c.env.D1_DATA_TABLE_NAME} (created_by, instance_name) VALUES (?, ?)`;
+  await c.env.DB.prepare(query).bind(userId, chatbotName).run();
+  return c.json({
+    ...HTTP_STATUS_RESPONSES.OK,
+    message: "Created chatbot",
+  }, {
+    status: HTTP_STATUS_RESPONSES.OK.status,
+  });
+});
+
+app.get("/chatbot/:userId/list", authMiddleware, async (c) => {
+  const { userId } = c.req.param();
+  const query = `SELECT instance_name FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ?`;
+  const { results } = await c.env.DB.prepare(query).bind(userId).run();
+  const uniqueInstanceNames = [...new Set(results.map((result) => result.instance_name))];
+  return c.json({
+    ...HTTP_STATUS_RESPONSES.OK,
+    instanceNames: uniqueInstanceNames,
+  }, {
+    status: HTTP_STATUS_RESPONSES.OK.status,
+  });
+});
+
+app.get("/chatbot/:userId/:chatbotName/list", authMiddleware, async (c) => {
+  const { userId, chatbotName } = c.req.param();
+  const query = `SELECT domain_knowledge_name FROM ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} WHERE id IN (SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?)`;
+  const { results } = await c.env.DB.prepare(query).bind(userId, chatbotName).run();
+  const uniqueDomainKnowledgeNames = [...new Set(results.map((result) => result.domain_knowledge_name))];
+  return c.json({
+    ...HTTP_STATUS_RESPONSES.OK,
+    domainKnowledgeNames: uniqueDomainKnowledgeNames,
+  }, {
+    status: HTTP_STATUS_RESPONSES.OK.status,
+  });
+});
+
+app.delete("/chatbot/:userId/:chatbotName", authMiddleware, async (c) => {
+  const { userId, chatbotName } = c.req.param();
+  const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
+  const { results } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run();
+  const ids = results.map((result) => result.id) as string[]
+
+  const deleteQuery = `DELETE FROM ${c.env.D1_DATA_TABLE_NAME} WHERE id IN (${ids.map((id) => `?`).join(",")})`;
+  await c.env.DB.prepare(deleteQuery).bind(...ids).run();
+  await c.env.VECTOR_INDEX.deleteByIds(ids);
+  return c.json({
+    ...HTTP_STATUS_RESPONSES.OK,
+    message: "Deleted chatbot text data and vector data",
+  }, {
+    status: HTTP_STATUS_RESPONSES.OK.status,
+  });
+});
+
+app.delete("/chatbot/:userId/:chatbotName/:domainKnowledgeName", authMiddleware, async (c) => {
+  const { userId, chatbotName, domainKnowledgeName } = c.req.param();
+
+  // get all ids of the chatbot of the user
+  const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
+  const { results: existingRecords } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run();
+  const ids = existingRecords.map((record) => record.id) as string[]
+
+  // delete the update history of the knowledge
+  const deleteQuery = `DELETE FROM ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} WHERE id IN (${ids.map((id) => `?`).join(",")}) AND domain_knowledge_name = ?`;
+  try {
+    await c.env.DB.prepare(deleteQuery).bind(...ids, domainKnowledgeName).run();
+    return c.json({
+      ...HTTP_STATUS_RESPONSES.OK,
+      message: "Deleted chatbot update history",
+    }, {
+      status: HTTP_STATUS_RESPONSES.OK.status,
+    });
+  } catch (e) {
+    return c.json({
+      ...HTTP_STATUS_RESPONSES.NOT_FOUND,
+      message: "The knowledge name does not exist",
+    }, {
+      status: HTTP_STATUS_RESPONSES.NOT_FOUND.status,
+    });
+  }
+});
 
 app.post('/', async (c) => {
   const today = Date.now()
@@ -114,147 +288,13 @@ app.post('/', async (c) => {
   });
 });
 
-app.post("/vector", authMiddleware, async (c) => {
-  const { text, values, metadata, updateId, description } = await c.req.json();
-  if (!text || !values || !metadata || !updateId || !description) {
-    return c.json({
-      "message": "Missing text, values, metadata, updateId, or description",
-      "ok": false,
-    }, 400);
-  }
-  const { instanceName, createdBy } = metadata
-  if (!instanceName || !createdBy) {
-    return c.json({
-      "message": "Missing instanceName or createdBy",
-      "ok": false,
-    }, 400);
-  }
-
-  const { results: existingRecord } = await c.env.DB.prepare(
-    `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE text = ? AND created_by = ? AND instance_name = ?`,
-  )
-  .bind(text, createdBy, instanceName)
-  .run<{ id: string }>()
-
-  if (existingRecord.length > 0) {
-    try {
-      await c.env.DB.prepare(
-        `INSERT INTO ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} (id, knowledge_id, description) VALUES (?, ?, ?)`,
-      )
-      .bind(existingRecord[0].id, updateId, description)
-      .run()
-      return c.json({
-        "message": "The knowledge is updated successfully",
-        "ok": true,
-      }, 200);
-    } catch (e) {
-      if (
-        e instanceof Error &&
-        e.message.includes("UNIQUE constraint failed") &&
-        e.message.includes("SQLITE_CONSTRAINT")
-      ) {
-        return c.json({
-          "message": "The knowledgeId already exists",
-          "ok": false,
-        }, 409)
-      }
-    }
-  } else {
-    const { results } = await c.env.DB.prepare(
-      `INSERT INTO ${c.env.D1_DATA_TABLE_NAME} (text, created_by, instance_name) VALUES (?, ?, ?) RETURNING *`,
-    )
-    .bind(text, createdBy, instanceName)
-    .run<{ id: string }>();
-
-    await c.env.DB.prepare(
-      `INSERT INTO ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} (id, knowledge_id, description) VALUES (?, ?, ?)`,
-    )
-    .bind(results[0].id, updateId, description)
-    .run()
-    
-    await c.env.VECTOR_INDEX.upsert([
-    {
-        id: results[0].id,
-        values: values as VectorFloatArray,
-        metadata: metadata as Record<string, any>,
-      },
-    ]);
-    
-    return c.json({
-      "message": "The text and vector data is created successfully",
-      "ok": true,
-      "id": results[0].id,
-    }, 200);
-  }
-});
-
-app.delete("/vector/:id", authMiddleware, async (c) => {
-  const { id } = c.req.param();
-
-  const query = `DELETE FROM ${c.env.D1_DATA_TABLE_NAME} WHERE id = ?`;
-  await c.env.DB.prepare(query).bind(id).run();
-  await c.env.VECTOR_INDEX.deleteByIds([id]);
-  return c.json({
-    "message": "Deleted chatbot text data and vector data",
-    "ok": true,
-  }, 200);
-});
-
-app.get("/chatbot/:userId/list", authMiddleware, async (c) => {
-  const { userId } = c.req.param();
-  const query = `SELECT instance_name FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ?`;
-  const { results } = await c.env.DB.prepare(query).bind(userId).run();
-  const uniqueInstanceNames = [...new Set(results.map((result) => result.instance_name))];
-  return c.json({
-    "instanceNames": uniqueInstanceNames,
-    "ok": true,
-  }, 200);
-});
-
-app.delete("/chatbot/:userId/:chatbotName", authMiddleware, async (c) => {
-  const { userId, chatbotName } = c.req.param();
-  const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
-  const { results } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run();
-  const ids = results.map((result) => result.id) as string[]
-
-  const deleteQuery = `DELETE FROM ${c.env.D1_DATA_TABLE_NAME} WHERE id IN (${ids.map((id) => `?`).join(",")})`;
-  await c.env.DB.prepare(deleteQuery).bind(...ids).run();
-  await c.env.VECTOR_INDEX.deleteByIds(ids);
-  return c.json({
-    "message": "Deleted chatbot text data and vector data",
-    "ok": true,
-  }, 200);
-});
-
-app.delete("/chatbot/:userId/:chatbotName/:domainKnowledgeName", authMiddleware, async (c) => {
-  const { userId, chatbotName, domainKnowledgeName } = c.req.param();
-
-  // get all ids of the chatbot of the user
-  const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
-  const { results: existingRecords } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run();
-  const ids = existingRecords.map((record) => record.id) as string[]
-
-  // delete the update history of the knowledge
-  const deleteQuery = `DELETE FROM ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} WHERE id IN (${ids.map((id) => `?`).join(",")}) AND knowledge_id = ?`;
-  try {
-    await c.env.DB.prepare(deleteQuery).bind(...ids, domainKnowledgeName).run();
-    return c.json({
-      "message": "Deleted chatbot update history",
-      "ok": true,
-    }, 200);
-  } catch (e) {
-    return c.json({
-      "message": "The knowledgeId does not exist",
-      "ok": false,
-    }, 404)
-  }
-});
-
 app.onError((err, c) => {
   return c.json({
-    "message": err.message,
-    "ok": false,
-  }, 500);
+    ...HTTP_STATUS_RESPONSES.INTERNAL_SERVER_ERROR,
+    message: err.message,
+  }, {
+    status: HTTP_STATUS_RESPONSES.INTERNAL_SERVER_ERROR.status,
+  });
 });
 
 export default app;
