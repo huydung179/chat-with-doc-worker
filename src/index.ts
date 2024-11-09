@@ -182,6 +182,18 @@ app.get("/chatbot/:userId/:chatbotName/list", authMiddleware, async (c) => {
   });
 });
 
+app.get("/chatbot/:userId/:chatbotName/prompt", authMiddleware, async (c) => {
+  const { userId, chatbotName } = c.req.param();
+  const selectQuery = `SELECT prompt FROM ${c.env.D1_PROMPT_TABLE_NAME} WHERE id = (SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?)`;
+  const { results } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run();
+  return c.json({
+    ...HTTP_STATUS_RESPONSES.OK,
+    prompt: results.length > 0 ? results[0].prompt : "",
+  }, {
+    status: HTTP_STATUS_RESPONSES.OK.status,
+  });
+});
+
 app.post("/chatbot/:userId/:chatbotName/prompt", authMiddleware, async (c) => {
   const { userId, chatbotName } = c.req.param();
   const { prompt } = await c.req.json();
