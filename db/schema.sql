@@ -14,6 +14,13 @@ CREATE TABLE ChatbotTextData (
     UNIQUE(text, created_by, instance_name)
 );
 
+CREATE TABLE ChatbotPrompt (
+    id TEXT,
+    prompt TEXT,
+    FOREIGN KEY (id) REFERENCES ChatbotTextData(id) ON DELETE CASCADE,
+    UNIQUE(id)
+);
+
 CREATE TABLE ChatbotUpdateHistory (
     id TEXT,
     domain_knowledge_name TEXT,

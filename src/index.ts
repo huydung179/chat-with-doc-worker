@@ -26,6 +26,7 @@ type Env = {
   HISTORY_MODEL_LIMIT: string;
   FINAL_OUTPUT_PARSER_NAME: string;
   SECRET_BEARER_TOKEN: string;
+  D1_PROMPT_TABLE_NAME: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -181,6 +182,24 @@ app.get("/chatbot/:userId/:chatbotName/list", authMiddleware, async (c) => {
   });
 });
 
+app.post("/chatbot/:userId/:chatbotName/prompt", authMiddleware, async (c) => {
+  const { userId, chatbotName } = c.req.param();
+  const { prompt } = await c.req.json();
+
+  const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
+  const { results: promptId } = await c.env.DB.prepare(selectQuery).bind(userId, chatbotName).run<{ id: string }>();
+
+  const insertQuery = `INSERT INTO ${c.env.D1_PROMPT_TABLE_NAME} (id, prompt) VALUES (?, ?)`;
+  await c.env.DB.prepare(insertQuery).bind(promptId[0].id, prompt).run();
+
+  return c.json({
+    ...HTTP_STATUS_RESPONSES.OK,
+    message: "Set chatbot prompt",
+  }, {
+    status: HTTP_STATUS_RESPONSES.OK.status,
+  });
+});
+
 app.delete("/chatbot/:userId/:chatbotName", authMiddleware, async (c) => {
   const { userId, chatbotName } = c.req.param();
   const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
@@ -232,6 +251,15 @@ app.post('/', async (c) => {
   if (!question) {
     return c.text("Missing question", 400);
   }
+  const { createdBy, instanceName } = filter
+  if (!createdBy || !instanceName) {
+    return c.json({
+      ...HTTP_STATUS_RESPONSES.BAD_REQUEST,
+      message: "Missing createdBy or instanceName in the filter",
+    }, {
+      status: HTTP_STATUS_RESPONSES.BAD_REQUEST.status,
+    });
+  }
 
   const chatHistory = historyToChatHistory(history || [], parseInt(c.env.HISTORY_MODEL_LIMIT))
 
@@ -263,11 +291,23 @@ app.post('/', async (c) => {
     rephrasePrompt: contextualizeQPrompt,
   })
 
+  const { results: promptId } = await c.env.DB.prepare(
+    `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`,
+  )
+  .bind(createdBy, instanceName)
+  .run<{ id: string }>()
+
+  const { results: prompt } = await c.env.DB.prepare(
+    `SELECT prompt FROM ${c.env.D1_PROMPT_TABLE_NAME} WHERE id = ?`,
+  )
+  .bind(promptId[0].id)
+  .run<{ prompt: string }>()
+
   const finalOutputParser = new StringOutputParser()
   finalOutputParser.name = c.env.FINAL_OUTPUT_PARSER_NAME
   const questionAnswerChain = await createStuffDocumentsChain({
     llm,
-    prompt: qaPrompt(today),
+    prompt: qaPrompt(today, prompt[0].prompt),
     outputParser: finalOutputParser,
   })
 
