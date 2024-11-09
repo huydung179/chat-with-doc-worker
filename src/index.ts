@@ -226,8 +226,8 @@ app.delete("/chatbot/:userId/:chatbotName", authMiddleware, async (c) => {
   }, 200);
 });
 
-app.delete("/chatbot/:userId/:chatbotName/:knowledgeId", authMiddleware, async (c) => {
-  const { userId, chatbotName, knowledgeId } = c.req.param();
+app.delete("/chatbot/:userId/:chatbotName/:domainKnowledgeName", authMiddleware, async (c) => {
+  const { userId, chatbotName, domainKnowledgeName } = c.req.param();
 
   // get all ids of the chatbot of the user
   const selectQuery = `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`;
@@ -237,7 +237,7 @@ app.delete("/chatbot/:userId/:chatbotName/:knowledgeId", authMiddleware, async (
   // delete the update history of the knowledge
   const deleteQuery = `DELETE FROM ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} WHERE id IN (${ids.map((id) => `?`).join(",")}) AND knowledge_id = ?`;
   try {
-    await c.env.DB.prepare(deleteQuery).bind(...ids, knowledgeId).run();
+    await c.env.DB.prepare(deleteQuery).bind(...ids, domainKnowledgeName).run();
     return c.json({
       "message": "Deleted chatbot update history",
       "ok": true,

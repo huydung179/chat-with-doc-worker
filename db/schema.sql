@@ -16,10 +16,10 @@ CREATE TABLE ChatbotTextData (
 
 CREATE TABLE ChatbotUpdateHistory (
     id TEXT,
-    knowledge_id TEXT,
+    domain_knowledge_name TEXT,
     description TEXT,
     FOREIGN KEY (id) REFERENCES ChatbotTextData(id) ON DELETE CASCADE,
-    UNIQUE(id, knowledge_id)
+    UNIQUE(id, domain_knowledge_name)
 );
 
 CREATE TRIGGER DeleteIDFromChatbotTextData
