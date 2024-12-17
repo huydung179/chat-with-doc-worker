@@ -91,7 +91,7 @@ OPENAI_MODEL_NAME="gpt-4o-mini"
 OPENAI_MODEL_TEMPERATURE=0.7
 OPENAI_MODEL_MAX_TOKEN=512
 HISTORY_MODEL_LIMIT=15
-MODEL_TOPK=5
+MODEL_TOPK=10
 
 # Bind a Vectorize index. Use to store and query vector embeddings for semantic search, classification and other vector search use-cases.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#vectorize-indexes
