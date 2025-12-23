@@ -87,7 +87,7 @@ enabled = true
 # Note: Use secrets to store sensitive data.
 # - https://developers.cloudflare.com/workers/configuration/secrets/
 [vars]
-OPENAI_MODEL_NAME="gpt-4o-mini"
+OPENAI_MODEL_NAME="gpt-4.1"
 OPENAI_MODEL_TEMPERATURE=0.7
 OPENAI_MODEL_MAX_TOKEN=512
 HISTORY_MODEL_LIMIT=15
