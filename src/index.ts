@@ -64,16 +64,16 @@ app.put("/chatbot/:userId/:chatbotName/insert-knowledge", authMiddleware, async 
   const { results: existingRecord } = await c.env.DB.prepare(
     `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE text = ? AND created_by = ? AND instance_name = ?`,
   )
-  .bind(text, userId, chatbotName)
-  .run<{ id: string }>()
+    .bind(text, userId, chatbotName)
+    .run<{ id: string }>()
 
   if (existingRecord.length > 0) {
     try {
       await c.env.DB.prepare(
         `INSERT INTO ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} (id, domain_knowledge_name, description) VALUES (?, ?, ?)`,
       )
-      .bind(existingRecord[0].id, domainKnowledgeName, description)
-      .run()
+        .bind(existingRecord[0].id, domainKnowledgeName, description)
+        .run()
       return c.json({
         ...HTTP_STATUS_RESPONSES.OK,
         message: "The knowledge is updated successfully",
@@ -99,17 +99,17 @@ app.put("/chatbot/:userId/:chatbotName/insert-knowledge", authMiddleware, async 
     const { results } = await c.env.DB.prepare(
       `INSERT INTO ${c.env.D1_DATA_TABLE_NAME} (text, created_by, instance_name) VALUES (?, ?, ?) RETURNING *`,
     )
-    .bind(text, userId, chatbotName)
-    .run<{ id: string }>();
+      .bind(text, userId, chatbotName)
+      .run<{ id: string }>();
 
     await c.env.DB.prepare(
       `INSERT INTO ${c.env.D1_UPDATE_HISTORY_TABLE_NAME} (id, domain_knowledge_name, description) VALUES (?, ?, ?)`,
     )
-    .bind(results[0].id, domainKnowledgeName, description)
-    .run()
-    
+      .bind(results[0].id, domainKnowledgeName, description)
+      .run()
+
     await c.env.VECTOR_INDEX.upsert([
-    {
+      {
         id: results[0].id,
         values: values as VectorFloatArray,
         metadata: {
@@ -119,7 +119,7 @@ app.put("/chatbot/:userId/:chatbotName/insert-knowledge", authMiddleware, async 
         },
       },
     ]);
-    
+
     return c.json({
       ...HTTP_STATUS_RESPONSES.OK,
       message: "The text and vector data is created successfully",
@@ -151,8 +151,8 @@ app.post("/chatbot/:userId/:chatbotName", authMiddleware, async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO ${c.env.D1_PROMPT_TABLE_NAME} (id, prompt) VALUES (?, ?)`,
   )
-  .bind(results[0].id, defaultPrompt)
-  .run()
+    .bind(results[0].id, defaultPrompt)
+    .run()
   return c.json({
     ...HTTP_STATUS_RESPONSES.OK,
     message: "Created chatbot",
@@ -216,7 +216,7 @@ app.post("/chatbot/:userId/:chatbotName/prompt", authMiddleware, async (c) => {
   }
 
   const existingPromptQuery = `SELECT prompt FROM ${c.env.D1_PROMPT_TABLE_NAME} WHERE id = ?`;
-  const { results: existingPrompt } = await c.env.DB.prepare(existingPromptQuery).bind(promptId[0].id).run<{ prompt: string }>(); 
+  const { results: existingPrompt } = await c.env.DB.prepare(existingPromptQuery).bind(promptId[0].id).run<{ prompt: string }>();
 
   if (existingPrompt.length > 0) {
     const updateQuery = `UPDATE ${c.env.D1_PROMPT_TABLE_NAME} SET prompt = ? WHERE id = ?`;
@@ -318,7 +318,7 @@ app.post('/', async (c) => {
     streaming: true,
     modelKwargs: {
       max_completion_tokens: parseInt(c.env.OPENAI_MODEL_MAX_TOKEN),
-      // reasoning_effort: "none",
+      reasoning_effort: "none",
     },
   })
 
@@ -328,11 +328,13 @@ app.post('/', async (c) => {
     rephrasePrompt: contextualizeQPrompt,
   })
 
+  // Measure prompt retrieval
+  const tPromptStore = Date.now();
   const { results: promptIdResults } = await c.env.DB.prepare(
     `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`,
   )
-  .bind(createdBy, instanceName)
-  .run<{ id: string }>()
+    .bind(createdBy, instanceName)
+    .run<{ id: string }>()
 
   if (promptIdResults.length === 0) {
     return c.json({
@@ -346,8 +348,9 @@ app.post('/', async (c) => {
   const { results: promptResults } = await c.env.DB.prepare(
     `SELECT prompt FROM ${c.env.D1_PROMPT_TABLE_NAME} WHERE id = ?`,
   )
-  .bind(promptIdResults[0].id)
-  .run<{ prompt: string }>()
+    .bind(promptIdResults[0].id)
+    .run<{ prompt: string }>()
+  console.log(`[Perf] Fetch prompt from D1: ${Date.now() - tPromptStore}ms`);
 
   const chatbotPromptText = promptResults.length > 0 ? promptResults[0].prompt : defaultPrompt;
 
@@ -364,13 +367,7 @@ app.post('/', async (c) => {
     combineDocsChain: questionAnswerChain,
   })
 
-  // Debug: print retrieved context
-  const retrievedDocs = await historyAwareRetriever.invoke({
-    input: question,
-    chat_history: chatHistory,
-  })
-  console.log("Retrieved context:", JSON.stringify(retrievedDocs, null, 2))
-
+  console.log("Starting RAG chain stream...");
   const eventStream = ragChain.streamEvents({
     input: question,
     chat_history: chatHistory,
@@ -378,6 +375,7 @@ app.post('/', async (c) => {
     version: "v2",
     encoding: "text/event-stream",
   })
+
 
   return new Response(eventStream, {
     headers: {
