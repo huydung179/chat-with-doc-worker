@@ -87,11 +87,14 @@ enabled = true
 # Note: Use secrets to store sensitive data.
 # - https://developers.cloudflare.com/workers/configuration/secrets/
 [vars]
-OPENAI_MODEL_NAME="gpt-4.1"
-OPENAI_MODEL_TEMPERATURE=0.7
+OPENAI_MODEL_NAME="gpt-5.1"
+OPENAI_MODEL_TEMPERATURE=0.3
 OPENAI_MODEL_MAX_TOKEN=512
 HISTORY_MODEL_LIMIT=15
 MODEL_TOPK=10
+D1_DATA_TABLE_NAME="ChatbotTextData"
+D1_PROMPT_TABLE_NAME="ChatbotPrompt"
+D1_UPDATE_HISTORY_TABLE_NAME="ChatbotUpdateHistory"
 
 # Bind a Vectorize index. Use to store and query vector embeddings for semantic search, classification and other vector search use-cases.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#vectorize-indexes

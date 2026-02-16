@@ -316,7 +316,10 @@ app.post('/', async (c) => {
     temperature: parseFloat(c.env.OPENAI_MODEL_TEMPERATURE),
     apiKey: c.env.OPENAI_API_KEY,
     streaming: true,
-    maxTokens: parseInt(c.env.OPENAI_MODEL_MAX_TOKEN),
+    modelKwargs: {
+      max_completion_tokens: parseInt(c.env.OPENAI_MODEL_MAX_TOKEN),
+      // reasoning_effort: "none",
+    },
   })
 
   const historyAwareRetriever = await createHistoryAwareRetriever({
@@ -325,23 +328,34 @@ app.post('/', async (c) => {
     rephrasePrompt: contextualizeQPrompt,
   })
 
-  const { results: promptId } = await c.env.DB.prepare(
+  const { results: promptIdResults } = await c.env.DB.prepare(
     `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`,
   )
   .bind(createdBy, instanceName)
   .run<{ id: string }>()
 
-  const { results: prompt } = await c.env.DB.prepare(
+  if (promptIdResults.length === 0) {
+    return c.json({
+      ...HTTP_STATUS_RESPONSES.NOT_FOUND,
+      message: "Chatbot not found for the given filter",
+    }, {
+      status: HTTP_STATUS_RESPONSES.NOT_FOUND.status,
+    });
+  }
+
+  const { results: promptResults } = await c.env.DB.prepare(
     `SELECT prompt FROM ${c.env.D1_PROMPT_TABLE_NAME} WHERE id = ?`,
   )
-  .bind(promptId[0].id)
+  .bind(promptIdResults[0].id)
   .run<{ prompt: string }>()
+
+  const chatbotPromptText = promptResults.length > 0 ? promptResults[0].prompt : defaultPrompt;
 
   const finalOutputParser = new StringOutputParser()
   finalOutputParser.name = c.env.FINAL_OUTPUT_PARSER_NAME
   const questionAnswerChain = await createStuffDocumentsChain({
     llm,
-    prompt: qaPrompt(today, prompt[0].prompt),
+    prompt: qaPrompt(today, chatbotPromptText),
     outputParser: finalOutputParser,
   })
 
@@ -350,6 +364,12 @@ app.post('/', async (c) => {
     combineDocsChain: questionAnswerChain,
   })
 
+  // Debug: print retrieved context
+  const retrievedDocs = await historyAwareRetriever.invoke({
+    input: question,
+    chat_history: chatHistory,
+  })
+  console.log("Retrieved context:", JSON.stringify(retrievedDocs, null, 2))
 
   const eventStream = ragChain.streamEvents({
     input: question,
@@ -367,6 +387,7 @@ app.post('/', async (c) => {
 });
 
 app.onError((err, c) => {
+  console.error("Worker error:", err);
   return c.json({
     ...HTTP_STATUS_RESPONSES.INTERNAL_SERVER_ERROR,
     message: err.message,

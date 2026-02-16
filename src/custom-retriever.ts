@@ -41,7 +41,7 @@ export class CustomRetriever extends BaseRetriever {
     runManager?: CallbackManagerForRetrieverRun,
   ): Promise<Document[]> {
     const embeddings = await this.embeddings.embedQuery(query)
-    const relevantVectors = await this.index.query(embeddings, { topK: this.topK, filter: this.filter})
+    const relevantVectors = await this.index.query(embeddings, { topK: this.topK, filter: this.filter })
     const ids = relevantVectors.matches.map(m => m.id)
     const placeholders = ids.map(() => "?").join(",")
     const dbQuery = `SELECT * FROM ${this.tableName} WHERE id IN (${placeholders})`
