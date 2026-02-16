@@ -328,8 +328,6 @@ app.post('/', async (c) => {
     rephrasePrompt: contextualizeQPrompt,
   })
 
-  // Measure prompt retrieval
-  const tPromptStore = Date.now();
   const { results: promptIdResults } = await c.env.DB.prepare(
     `SELECT id FROM ${c.env.D1_DATA_TABLE_NAME} WHERE created_by = ? AND instance_name = ?`,
   )
@@ -350,7 +348,6 @@ app.post('/', async (c) => {
   )
     .bind(promptIdResults[0].id)
     .run<{ prompt: string }>()
-  console.log(`[Perf] Fetch prompt from D1: ${Date.now() - tPromptStore}ms`);
 
   const chatbotPromptText = promptResults.length > 0 ? promptResults[0].prompt : defaultPrompt;
 
@@ -367,7 +364,6 @@ app.post('/', async (c) => {
     combineDocsChain: questionAnswerChain,
   })
 
-  console.log("Starting RAG chain stream...");
   const eventStream = ragChain.streamEvents({
     input: question,
     chat_history: chatHistory,
