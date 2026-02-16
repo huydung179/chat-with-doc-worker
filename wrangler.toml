@@ -101,13 +101,15 @@ D1_UPDATE_HISTORY_TABLE_NAME="ChatbotUpdateHistory"
 [[vectorize]]
 binding = "VECTOR_INDEX"
 index_name = "me-chatbot-vec"
+remote = true
 
 # Bind a D1 database. D1 is Cloudflare’s native serverless SQL database.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases
 [[d1_databases]]
 binding = "DB"
 database_name = "me-chatbot-db"
-database_id = "01894209-8ddb-4c82-88b3-9c55dae08f72"  
+database_id = "01894209-8ddb-4c82-88b3-9c55dae08f72"
+remote = true
 
 # Bind the Workers AI model catalog. Run machine learning models, powered by serverless GPUs, on Cloudflare’s global network
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#workers-ai
